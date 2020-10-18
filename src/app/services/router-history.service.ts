@@ -101,7 +101,7 @@ export class RouterHistoryService {
         this.history$ = [];
         history.forEach(element => {
 
-          if(element.queryParameters){
+          if(element.queryParameters){ // check if the element has query parameters and save them into the history if it does
             var params= [];
 
             element.queryParameters.split("&").forEach(param => {
@@ -119,10 +119,13 @@ export class RouterHistoryService {
       });
   }
 
+  // Lets the history be cleared if the user goes to a high level menu item or similar
+  // which may not be in the current history
   public clear(){
     this.clearHistory = true;
   }
   
+  // reads the label from the active route for use in the breadcrumb
   private getRouteLabel(route: ActivatedRoute): string{
 
     if (route.children.length === 0) {
