@@ -1,17 +1,18 @@
 import { Injectable } from '@angular/core';
-import { BehaviorSubject } from 'rxjs';
-import { Router, NavigationStart, NavigationEnd } from '@angular/router';
+import { Router, NavigationStart, NavigationEnd, ActivatedRoute } from '@angular/router';
 import { filter, scan } from 'rxjs/operators';
-import { RouterHistory } from '../models/router-history';
+import { RouterHistory } from '../shared/breadcrumbs/router-history';
+import { MenuItem } from 'primeng/api';
 
 @Injectable({
   providedIn: 'root'
 })
 export class RouterHistoryService {
-  previousUrl$ = new BehaviorSubject<string>(null);
-  currentUrl$ = new BehaviorSubject<string>(null);
+  static readonly ROUTE_DATA_BREADCRUMB = 'breadcrumb';
+  history$: MenuItem[] = [];
+  clearHistory: boolean = false;
 
-  constructor(router: Router) {
+  constructor(router: Router, private activatedRoute: ActivatedRoute) {
     router.events
       .pipe(
         // only include NavigationStart and NavigationEnd events
@@ -21,6 +22,7 @@ export class RouterHistoryService {
         ),
         scan<NavigationStart | NavigationEnd, RouterHistory>(
           (acc, event) => {
+
             if (event instanceof NavigationStart) {
               // We need to track the trigger, id, and idToRestore from the NavigationStart events
               return {
@@ -34,22 +36,34 @@ export class RouterHistoryService {
               };
             }
 
+            const children: ActivatedRoute[] = this.activatedRoute.root.children;
+
+            var currentChild = children[0];
+            const label = this.getRouteLabel(currentChild);
+
             // NavigationEnd events
             const history = [...acc.history];
             let currentIndex = acc.currentIndex;
 
-            // router events are imperative (router.navigate or routerLink)
-            if (acc.trigger === 'imperative') {
+            if(this.clearHistory){
+              history.splice(0);
+              this.clearHistory = false;
+            }
+
+            var existingIndex = history.findIndex(h => h.label == label);
+
+            if(existingIndex != -1){
+              history.splice(existingIndex + 1);
+            }else if (acc.trigger === 'imperative') {
               // remove all events in history that come after the current index
               history.splice(currentIndex + 1);
 
+              var urlComponants = event.urlAfterRedirects.split('?');
               // add the new event to the end of the history and set that as our current index
-              history.push({ id: acc.id, url: event.urlAfterRedirects });
-              currentIndex = history.length - 1;
-            }
+              history.push({ id: acc.id, url: urlComponants[0], label: label, queryParameters: urlComponants[1] });
 
-            // browser events (back/forward) are popstate events
-            if (acc.trigger === 'popstate') {
+              currentIndex = history.length - 1;
+            }else if (acc.trigger === 'popstate') {
               // get the history item that references the idToRestore
               const idx = history.findIndex(x => x.id === acc.idToRestore);
 
@@ -83,13 +97,38 @@ export class RouterHistoryService {
           ({ event, trigger }) => event instanceof NavigationEnd && !!trigger
         )
       )
-      .subscribe(({ history, currentIndex }) => {
-        const previous = history[currentIndex - 1];
-        const current = history[currentIndex];
+      .subscribe(({ history }) => {
+        this.history$ = [];
+        history.forEach(element => {
 
-        // update current and previous urls
-        this.previousUrl$.next(previous ? previous.url : null);
-        this.currentUrl$.next(current.url);
+          if(element.queryParameters){
+            var params= [];
+
+            element.queryParameters.split("&").forEach(param => {
+              var componants = param.split("=");
+
+              params.push({k: componants[0], v: componants[1]})
+            });
+
+            this.history$.push({label: element.label, target: element.url, queryParams: params})
+          }
+          else{
+            this.history$.push({label: element.label, target: element.url})
+          }
+        });
       });
+  }
+
+  public clear(){
+    this.clearHistory = true;
+  }
+  
+  private getRouteLabel(route: ActivatedRoute): string{
+
+    if (route.children.length === 0) {
+      return route.snapshot.data[RouterHistoryService.ROUTE_DATA_BREADCRUMB];;
+    }
+
+    return this.getRouteLabel(route.children[0]);
   }
 }
